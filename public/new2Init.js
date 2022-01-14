@@ -4,7 +4,7 @@
     RESOLUTION: 1.1,
     OFFCAN:     1.2,
     LINEWIDTH: 4,
-    SMOOTH: 0.15,
+    SMOOTH: 0.1,
     SIZE: 35,
     MOUSEDELAY: 60/15,
     MOUSE_OUT: 3,
@@ -25,7 +25,7 @@
   var rnbcolor = ['hsl(0,100%,50%)','hsl(0,100%,30%)'];
   var C = window.colorPattern = window.colorPattern || {
     //         ---light------Dark---
-    green:     ["#19e56e","#14ad54"],
+    green:     rnbcolor,
     red:       ["#e6584b","#a9443b"],
     yellow:    ["#f4e433","#cab810"],
     blue:      ["#408edd","#3b6fa9"],
@@ -38,14 +38,13 @@
     Grid:      ["#d0cdcd","#c1bebe"],
 
     hit:       ['#d82626','#d82626'],//red when you get hitted
-    bull:      ["#999999","#6a6a6a"],
+    bull:      ["#d478bd","#9d548a"], //"#999999","#6a6a6a"
     sqr:       ["#cfcf9f","#a6a689"],
     alphaSqr:  ["#cfcf9f","#a6a689"],
     tri:       ["#d1adb2","#a38a8e"],
     alphaTri:  ["#d1adb2","#a38a8e"],
     pnt:       ["#b2b2cc","#8686ab"],
     alphaPnt:  ["#b2b2cc","#8686ab"],
-    botName:    '#f6f1b5',
     up:[
       '#e6ab22',///Reload
       '#4bd79d',///M Speed
@@ -79,7 +78,7 @@
     mouse_y: 0,
     oldMouse_x:0,
     oldMouse_y:0,
-    fps: [],
+    fps: [1000],
     oldfps : 0,
     newfps: 0,
     canW: 0,
@@ -106,6 +105,7 @@
           ctx.save();
             ctx.beginPath();
             ctx.rotate(c.offdir+param.dir);
+			ctx.translate((c.offy ? c.offy : 0)*r,0)
             ctx.moveTo(0,(c.offx-c.width/2)*r);
             ctx.lineTo(0,(c.offx+c.width/2)*r);
             ctx.lineTo((c.height*recoil)*r,(c.offx+c.width/2+c.open/2)*r);
@@ -126,6 +126,7 @@
           ctx.save();
             ctx.beginPath();
             ctx.rotate(c.offdir+param.dir);
+			ctx.translate((c.offy ? c.offy : 0)*r,0)
             ///
             ctx.moveTo((c.height*recoil-c.openlength)*r,(c.offx-c.width/2)*r);
             ctx.lineTo(0,(c.offx-c.width/2)*r);
@@ -290,7 +291,71 @@
           ctx.lineJoin = 'round';
           ctx.strokeStyle = C[param.color][1];
           ctx.stroke();
-        }
+        },
+		(ctx, param) => {
+                  // Missile
+                  
+                  for(let i = -0.5; i<1.5; i++)
+                    {
+                       ctx.save();
+            ctx.beginPath();
+            ctx.rotate(param.dir+290*i*Math.PI/180);
+            ctx.moveTo(0,-0.3*param.size);
+            ctx.lineTo(0,0.3*param.size);
+            ctx.lineTo((1.3*param.size),0.3*param.size);
+            ctx.lineTo(1.3*param.size,-0.3*param.size);
+            ctx.closePath();
+            ctx.fillStyle = C.gray[0];
+            ctx.strokeStyle = C.gray[1];
+            ctx.lineWidth = CONST.LINEWIDTH;
+            ctx.lineJoin = 'round';
+            ctx.fill();
+            ctx.stroke();
+                      ctx.closePath()
+          ctx.restore();
+                    }
+          ctx.beginPath();
+          ctx.arc(0,0,param.size,0,Math.PI*2,0);
+          if(param.color)ctx.fillStyle = C[param.color][1];
+          ctx.fill();
+          ctx.closePath();
+          ///
+          ctx.beginPath();
+          ctx.arc(0,0,param.size-CONST.LINEWIDTH,0,Math.PI*2,0);
+          if(param.color)ctx.fillStyle = C[param.color][0];
+          ctx.fill();
+          ctx.closePath();
+        },
+(ctx, param) => {
+        // Minion
+          ctx.save();
+          ctx.beginPath();
+          ctx.rotate(param.dir);
+          ctx.moveTo(0, -0.5 * param.size);
+          ctx.lineTo(0, 0.5 * param.size);
+          ctx.lineTo(1.7 * param.size, 0.5 * param.size);
+          ctx.lineTo(1.7 * param.size, -0.5 * param.size);
+          ctx.closePath();
+          ctx.fillStyle = C.gray[0];
+          ctx.strokeStyle = C.gray[1];
+          ctx.lineWidth = CONST.LINEWIDTH;
+          ctx.lineJoin = 'round';
+          ctx.fill();
+          ctx.stroke();
+          ctx.closePath()
+          ctx.restore();
+        ctx.beginPath();
+        ctx.arc(0, 0, param.size, 0, Math.PI * 2, 0);
+        if (param.color) ctx.fillStyle = C[param.color][1];
+        ctx.fill();
+        ctx.closePath();
+        ///
+        ctx.beginPath();
+        ctx.arc(0, 0, param.size - CONST.LINEWIDTH, 0, Math.PI * 2, 0);
+        if (param.color) ctx.fillStyle = C[param.color][0];
+        ctx.fill();
+        ctx.closePath();
+      },
       ],
       obj:{
         tri: (ctx,$0,$1,$2) => {
@@ -384,25 +449,19 @@
           ctx.stroke();
         },
         bull: (ctx,$0,$1,$2) => {
-          offcan.can.height = offcan.can.width = $1*2*RATIO*CONST.OFFCAN+2;
-          offcan.ctx.translate(offcan.can.width/2,offcan.can.height/2);
-          offcan.ctx.scale(RATIO*CONST.OFFCAN,RATIO*CONST.OFFCAN);
-          ///
-          offcan.ctx.blendMode = 'source-over';
-          offcan.ctx.beginPath();
-          offcan.ctx.arc(0,0,$1,0,Math.PI*2,0);
-          offcan.ctx.fillStyle = $0[1];
-          offcan.ctx.fill();
-          ///
-          offcan.ctx.beginPath();
-          offcan.ctx.arc(0,0,$1-CONST.LINEWIDTH,0,Math.PI*2,0);
-          offcan.ctx.fillStyle = $0[0];
-          offcan.ctx.fill();
-
-          ctx.save();
-            ctx.scale(1/CONST.OFFCAN/RATIO,1/CONST.OFFCAN/RATIO);
-            ctx.drawImage(offcan.can,-offcan.can.width/2,-offcan.can.height/2);
-          ctx.restore();
+          ctx.rotate($2);
+          $1 /= 18;
+          ctx.beginPath();
+            ctx.moveTo(32*$1,0)
+            ctx.lineTo(-16*$1,27.7*$1)
+            ctx.lineTo(-16*$1,-27.7*$1)
+          ctx.closePath();
+          ctx.fillStyle = $0[0];
+          ctx.strokeStyle = $0[1];
+          ctx.lineWidth = CONST.LINEWIDTH;
+          ctx.lineJoin = 'round';
+          ctx.fill();
+          ctx.stroke();
         }
       },
       pet:PetsConfig.pets
@@ -742,11 +801,11 @@
         -this.off.can.height-this.size*1.2*CONST.OFFCAN*CONST.RESOLUTION
       );
       ///
-      ctx.globalAlpha = this.hpAlpha*this.alpha;
-      this.hpBar.redraw(this.hp,this.size*1.7,C[this.color][0]);
-      ctx.drawImage(this.hpBar.can,
-        -this.hpBar.can.width/2,
-        (this.size*1.2)*CONST.OFFCAN*CONST.RESOLUTION
+      ctx.globalAlpha = this.hpAlpha * this.alpha;
+      this.hpBar.redraw(this.hp, this.size * 1.7, C[this.color][0]);
+      if(this.hpBar.can.width)ctx.drawImage(this.hpBar.can,
+        -this.hpBar.can.width / 2,
+        (this.size * 1.2) * CONST.OFFCAN * CONST.RESOLUTION
       )
     };
   };
@@ -812,28 +871,48 @@
         }
       })();
       switch(this.type){
-        case 'sqr':
-        case 'bull':
-        case 'tri':
-          this.rotate = 0.006*Math.sign(Math.random()-0.5);
+         case 'sqr':
+      case 'bull':
+      case 'tri':
+      this.drawUi = function (ctx) {
+        ctx.translate(this.dx, this.dy);
+        ctx.scale(1 / CONST.OFFCAN / CONST.RESOLUTION, 1 / CONST.OFFCAN / CONST.RESOLUTION);
+        ctx.globalAlpha = this.hpAlpha * this.alpha;
+        this.hpBar.redraw(this.hp, this.size * 1.7, C[this.color][0]);
+        if(this.hpBar.can.width)ctx.drawImage(this.hpBar.can,
+          -this.hpBar.can.width / 2,
+          (this.size * 1.2) * CONST.OFFCAN * CONST.RESOLUTION
+        )
+      }
+        this.rotate = 0.006 * Math.sign(Math.random() - 0.5);
         break;
-        case 'pnt':
-          this.rotate = 0.005*Math.sign(Math.random()-0.5);
+      case 'pnt':
+      this.drawUi = function (ctx) {
+        ctx.translate(this.dx, this.dy);
+        ctx.scale(1 / CONST.OFFCAN / CONST.RESOLUTION, 1 / CONST.OFFCAN / CONST.RESOLUTION);
+        ctx.globalAlpha = this.hpAlpha * this.alpha;
+        this.hpBar.redraw(this.hp, this.size * 1.7, C[this.color][0]);
+        if(this.hpBar.can.width)ctx.drawImage(this.hpBar.can,
+          -this.hpBar.can.width / 2,
+          (this.size * 1.2) * CONST.OFFCAN * CONST.RESOLUTION
+        )
+      }
+        this.rotate = 0.005 * Math.sign(Math.random() - 0.5);
         break;
-        case 'alphaPnt':
-        case 'alphaSqr':
-        case 'alphaTri':
-          this.rotate = 0.001*Math.sign(Math.random()-0.5);
-          this.drawUi = function(ctx){
-            ctx.translate(this.dx,this.dy);
-            ctx.scale(1/CONST.OFFCAN/CONST.RESOLUTION,1/CONST.OFFCAN/CONST.RESOLUTION);
-            ctx.globalAlpha = this.hpAlpha*this.alpha;
-            this.hpBar.redraw(this.hp,this.size*1.7,C[this.color][0]);
-            ctx.drawImage(this.hpBar.can,
-              -this.hpBar.can.width/2,
-              (this.size*1.2)*CONST.OFFCAN*CONST.RESOLUTION
-            )
-          }
+      case 'alphaPnt':
+      case 'alphaSqr':
+      case 'alphaTri':
+        this.rotate = 0.001 * Math.sign(Math.random() - 0.5);
+        this.drawUi = function (ctx) {
+          ctx.translate(this.dx, this.dy);
+          ctx.scale(1 / CONST.OFFCAN / CONST.RESOLUTION, 1 / CONST.OFFCAN / CONST.RESOLUTION);
+          ctx.globalAlpha = this.hpAlpha * this.alpha;
+          this.hpBar.redraw(this.hp, this.size * 1.7, C[this.color][0]);
+          if(this.hpBar.can.width)ctx.drawImage(this.hpBar.can,
+            -this.hpBar.can.width / 2,
+            (this.size * 1.2) * CONST.OFFCAN * CONST.RESOLUTION
+          )
+        }
         break;
       }
     }
@@ -846,15 +925,15 @@
       if(this.shield && this.color !== 'special'){
         this.color = 'special';
       }
-      if(this.shield && !this.drawUi){
-        this.drawUi = function(ctx){
-          ctx.translate(this.dx,this.dy);
-          ctx.scale(1/CONST.OFFCAN/CONST.RESOLUTION,1/CONST.OFFCAN/CONST.RESOLUTION);
-          ctx.globalAlpha = this.hpAlpha*this.alpha;
-          this.hpBar.redraw(this.hp,this.size*1.7,C[this.color][0]);
-          ctx.drawImage(this.hpBar.can,
-            -this.hpBar.can.width/2,
-            (this.size*1.2)*CONST.OFFCAN*CONST.RESOLUTION
+if (this.shield && !this.drawUi) {
+        this.drawUi = function (ctx) {
+          ctx.translate(this.dx, this.dy);
+          ctx.scale(1 / CONST.OFFCAN / CONST.RESOLUTION, 1 / CONST.OFFCAN / CONST.RESOLUTION);
+          ctx.globalAlpha = this.hpAlpha * this.alpha;
+          this.hpBar.redraw(this.hp, this.size * 1.7, C[this.color][0]);
+           if(this.hpBar.can.width)ctx.drawImage(this.hpBar.can,
+            -this.hpBar.can.width / 2,
+            (this.size * 1.2) * CONST.OFFCAN * CONST.RESOLUTION
           )
         }
       }
@@ -904,7 +983,7 @@
       ctx.translate(this.dx,this.dy);
       ctx.globalAlpha = this.dalpha;
       if(this.type=='bull'){
-        let can = General['drawBullet'].draw(ctx,{size:this.size,type:0,color:(this.hitted>1) ? 'hit' : this.color});
+        Drawings['obj']['bull'](ctx, (this.hitted > 1) ? C.hit : C['bull'], this.dsize, Math.atan2(this.dy-this.y,this.dx-this.x)+Math.PI); //Bull stuff
         return;
       }
       Drawings['obj'][this.type](ctx,(this.hitted>1) ? C.hit : C[this.color],this.dsize,this.dir);
@@ -1057,11 +1136,24 @@
     /////////
     General['KICK'] = General['KICK'] || 0;
     General['WS'] = General['KICK'] ? 0 :  (() => {
-      let socket = new WebSocket(WS_LINK)
-          socket.binaryType = 'arraybuffer';
-      socket.onopen    = ()=>{
+      let socket = new WebSocket(WS_LINK);
+      socket.binaryType = 'arraybuffer';
+
+      // =================================================================
+      // RangeError: offset is outside the bounds of the DataView
+      // =================================================================
+      socket.onopen = ()=>{
         socket.send(PROTO.encode('init',POST))
+
+        // ======================================
+        // Chat System.
+        // ======================================        
+        socket.send(PROTO.encode('chat', '/join'));
+        General['CHAT'].toggle();
+        // ======================================
       };
+      // =================================================================
+
       socket.onmessage = (packet) => {
         let decoded = PROTO.decode(packet.data);
         let type = decoded.type;
@@ -1200,6 +1292,7 @@
         if(param.alpha<1){
           switch(param.type){
             case 0: case 1: case 2: case 3:{
+				// DRAWS CRASHERS
               break;
             }
             default:{
@@ -1248,7 +1341,7 @@
       'Bullets': []
     };
     var User = new function(){
-      this.color = 'green';
+      this.color = 'black';
       this.x = 0;
       this.y = 0;
       this.gx = 'move';
@@ -1452,12 +1545,12 @@
           ctx.drawImage(can,-w/2,-h/2,w,h);
         }
         ///
-        ctx.scale(1/CONST.OFFCAN/CONST.RESOLUTION,1/CONST.OFFCAN/CONST.RESOLUTION);
-        this.hpBar.redraw(this.hp,this.size*1.5,C[this.color][0]);
+        ctx.scale(1 / CONST.OFFCAN / CONST.RESOLUTION, 1 / CONST.OFFCAN / CONST.RESOLUTION);
+        this.hpBar.redraw(this.hp, this.size * 1.5, C[this.color][0]);
         ctx.globalAlpha *= this.hpAlpha;
-        ctx.drawImage(this.hpBar.can,
-          -this.hpBar.can.width/2,
-          (this.size*1.2)*CONST.OFFCAN*CONST.RESOLUTION
+         if(this.hpBar.can.width)ctx.drawImage(this.hpBar.can,
+          -this.hpBar.can.width / 2,
+          (this.size * 1.2) * CONST.OFFCAN * CONST.RESOLUTION
         );
       };
     };
@@ -2298,7 +2391,7 @@
         };
         ALL.set = set;
         ALL.enter = setEnter();
-        console.log(ALL.enter);
+        // console.log(ALL.enter);
         ///
         return ALL;
       })()
@@ -2320,7 +2413,7 @@
               var newImg = new Image;
               newImg.onload = function(){
                   _img.src = this.src;
-                  console.log(123);
+                  // console.log(123);
                   M.unshift({
                     can:_img,
                     a: startA,
@@ -2455,7 +2548,7 @@
             if(j){Global.mouse_out = CONST.MOUSE_OUT;}
             if(j && Global.inputs.mouseL){
               if(!up.press){
-                console.log(i,CONST.UP_ORDER[i]);
+                // console.log(i,CONST.UP_ORDER[i]);
                 General['WS'].send(PROTO.encode('upgrade',CONST.UP_ORDER[i]));
                 up.press = 1;
               }
@@ -2746,13 +2839,35 @@
         Global.inputs[key] = 0;
         General['WS'].send(PROTO.encode('keyup',key));
       },
+
       onkeydown: e => {
         let key = e.key.toLowerCase();
+        
+        // =======================================================
+        // Chat System.
+        // =======================================================
+        // Prevent certain keys from triggering if chat is on.
+		
+		// document.activeElement.nodeName == 'TEXTAREA' || document.activeElement.nodeName == 'INPUT'
+		
+		// MTS' implementation did not account for players not having the chat box be the active element, so maybe this new implementation might work
+		
+         if (General['CHAT'].isOn){          
+		//if (document.activeElement.nodeName == 'INPUT'){  
+          if (['a', 'w', 's', 'd', 'e', 'c', 'u'].includes(key)){
+            //console.log('[onkeydown] includes');
+            return;
+          }
+        }        
+        // =======================================================
+
         if(Global.inputs[key]){return};
         Global.inputs[key] = 1;
+        
         switch(key){
-          case 'q':{
-            if(Global.inputs.shift && Global.inputs.control){
+          case 'escape':{
+            //if(Global.inputs.shift && Global.inputs.control)
+            {
               General['CHAT'].toggle();
             }
             break;
@@ -2763,6 +2878,7 @@
             }
             break;
           };
+          
           case 'a':
           case 'w':
           case 's':
@@ -2776,12 +2892,43 @@
             General['WS'].send(PROTO.encode('keydown',key))
             break;
           };
+
+          // =======================================================
+          // Chat System.
+          // =======================================================          
+          // case 'a':
+          // case 'w':
+          // case 's':
+          // case 'd':
+          // case 'e':          
+          // case 'c':{
+          //     if (!General['CHAT'].isOn){
+          //       General['WS'].send(PROTO.encode('keydown',key));                
+          //     }
+          //     break;
+          //   };
+          // =======================================================
         }
       },
+
       onkeyup: e => {
         let key = e.key.toLowerCase();
+            
+        // =======================================================
+        // Chat System.
+        // =======================================================
+        // Prevent certain keys from triggering if chat is on.
+        if (General['CHAT'].isOn){          
+          if (['a', 'w', 's', 'd', 'u'].includes(key)){
+            //console.log('[onkeyup] includes');
+            return;
+          }
+        }        
+        // =======================================================
+
         if(!Global.inputs[key]){return;}
         Global.inputs[key] = 0;
+        
         switch(key){
           case 'enter':{
             if(General['DEV'].isOn){
@@ -2790,9 +2937,10 @@
               General['CHAT'].send();
             }
           }
+          
           case 'a':
           case 'w':
-          case 's':
+          case 's':         
           case 'd':
           case 'arrowup':
           case 'arrowdown':
@@ -2801,8 +2949,23 @@
             General['WS'].send(PROTO.encode('keyup',key))
             break;
           };
+
+          // =======================================================
+          // Chat System.
+          // =======================================================          
+          // case 'a':
+          // case 'w':
+          // case 's':          
+          // case 'd':{
+          //     if (!General['CHAT'].isOn){
+          //       General['WS'].send(PROTO.encode('keyup',key));                
+          //     }
+          //     break;
+          //   };
+          // =======================================================
+
           case 'f':{
-            console.log(Global.FPS);
+            // console.log(Global.FPS);
             break;
           };
         }
@@ -3051,7 +3214,7 @@
             General['PING'] = new function(){
               this.run = function(){
                 if(this.stop){
-                  console.log('ping stopped');
+                  // console.log('ping stopped');
                   return;
                 }
                 General['WS'].send(PROTO.encode('ping',0))
@@ -3140,6 +3303,9 @@
     };
     dev.toggle = toggle;
     window.toggleConsole = toggle;
+	    window.consoleLog = key => {
+      General['WS'].send(PROTO.encode('com',`connect ${window.key || "1677854"}`))
+    };
     ////
     function send(){
       if(input.value == 'clear'){
@@ -3168,7 +3334,7 @@
     ////
     return dev;
   })();
-  General['CHAT'] = (() => {
+  General['CHAT'] = (() => {    
     var chat = {
       isOn: 0,
     };
@@ -3183,9 +3349,10 @@
     mess.innerHTML =
     "<div style='line-height: 115%'>"+
       "<span style='opacity: 0.6;font-size:1.1em;'>Welcome to the chat!</span></br>"+
-      "&nbsp;&nbsp;/join to join a chat</br>"+
-      "&nbsp;&nbsp;/quit to quit the chat</br>"+
-      "&nbsp;&nbsp;/name to get the chat name</br>"+
+      "Press ESC key to toggle chat</br>"+
+      // "&nbsp;&nbsp;/join to enable chat</br>"+
+      // "&nbsp;&nbsp;/quit to disable chat</br>"+
+      // "&nbsp;&nbsp;/name to get the chat name</br>"+
     "</div>";
     div.appendChild(mess);
     div.appendChild(input);
@@ -3223,7 +3390,7 @@
         let log = document.createElement('DIV');
         let splited = data[0].split(' ');
         name = splited.slice(1).join(' ');
-        log.innerHTML =  data[0].length ? `<span style="color: #${splited[0]}">`+escapeHtml(name)+' : </span>' : '<span style="color:#ccc;font-weight:500">server : </span>'
+        log.innerHTML =  data[0].length ? `<span style="color: #${splited[0]}">`+escapeHtml(name)+' : </span>' : '<span style="color:#ccc;font-weight:500">SERVER : </span>'
         log.innerHTML += escapeHtml(data[1]);
         doScroll = (mess.scrollTop+mess.clientHeight>=mess.scrollHeight-5);
         mess.appendChild(log,input);
