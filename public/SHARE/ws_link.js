@@ -1,1 +1,1 @@
-window.WS_LINK = 'ws://localhost:8080';
+window.WS_LINK = 'wss://obstarv2.glitch.me/';

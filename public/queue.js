@@ -9,18 +9,6 @@ function selectGM(gm){
       elem[2].classList.add('deactivated');
       break;
     }
-    case '2team':{
-      elem[0].classList.add('deactivated');
-      elem[1].classList.remove('deactivated');
-      elem[2].classList.add('deactivated');
-      break;
-    }
-    case '4team':{
-      elem[0].classList.add('deactivated');
-      elem[1].classList.add('deactivated');
-      elem[2].classList.remove('deactivated');
-      break;
-    }
   };
 };
 

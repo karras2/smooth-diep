@@ -5,25 +5,76 @@ process.on('uncaughtException', function(err) {
   console.log('Caught exception: ' + err.stack);
   log_file_err.write(util.format('Caught exception: '+err) + '\n');
 });
+///////////////////////////
+var http         = require('http');
+var express      = require('express');
+var bodyParser   = require('body-parser');
+var cookieParser = require('cookie-parser');
+var app          = express();
 
-var c            = require('./lib/config.js').config;
-var Vec          = require('victor');
-var USERS = c.MYSQL ? require('mysql').createPool(require('./lib/AlexMysql.js').info) : 0;
-if (USERS) {
+var c = require('./lib/config.js').config;
+appWs = false;
+if(c.GLITCH) var appWs = require('express-ws')(app);
+var USERS = c.MYSQL ? require('mysql').createPool(require('./lib/webMysql.js').info) : 0;
+
+///
+var LEADERBOARD = [];
+var SHOP = {HIDE:0};
+var SHOPPER = {};
+///
+if(USERS){
   USERS.getConnection(function(err) {
     if (err) throw err;
     console.log("connect database");
-});
+  });
+  if(c.DB.LB){
+    let updateLB = ()=>{
+      USERS.query('SELECT score, name, tank, gm, DATE_FORMAT(date, "%d-%m-%Y") AS date FROM wrs ORDER BY score DESC',function(err,leader){
+        if (err) throw(err);
+        LEADERBOARD = leader;
+      })
+    };
+    updateLB();
+    setInterval(updateLB,120000);
+  }
+  if(c.DB.SHOP){
+    let updateShop = ()=>{
+      USERS.query('SELECT class, id, label, price FROM shop',function(err,shop){
+        if (err) throw(err);
+        shop.forEach((item)=>{
+          SHOP[item.class] = SHOP[item.class] || [];
+          SHOP[item.class][item.id] = {
+            label: item.label,
+            price: item.price,
+          }
+        })
+      })
+    };
+    updateShop();
+    setInterval(updateShop,120000);
+  } else {
+    SHOP.HIDE = 0
+  }
 }
-///
-var http = require('http');
-var server = http.createServer(function(request, response) {
-    response.writeHead(404);
-    response.end();
-});
-var WebSocket = require('ws');
-var ws        = (function(){
 
+///
+var generateKey = (()=>{
+  let str = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890'
+  return (length)=>{
+    return new Array(length).fill(0).map((x)=>{return str[parseInt(Math.random()*str.length)]}).join('');
+  }
+})()
+var basicKey = '0'.repeat(25);
+
+///
+app.use( express.static(__dirname+'/public'));
+app.use( bodyParser.json() );
+app.use( bodyParser.urlencoded({ extended: true }) );
+app.use( cookieParser() );
+
+
+///
+var ws        = (function(){
   let PROTO = require('./public/SHARE/SocketSchema.js');
 
   function income(socket,packet){
@@ -149,7 +200,7 @@ var ws        = (function(){
     this.dead = 0;
     this.request = 0;
     this.heartbeats = 0;
-    this.run = 1;
+    this.run = 0;
     this.chat = 0;
     this.gameloop = function(){
       if(!this.run){return;}
@@ -250,18 +301,139 @@ var ws        = (function(){
     setTimeout((s)=>{s.close()},100,socket);
   }
 
-  let wss = new WebSocket.Server({server});
-  wss.on('connection', function(socket){
+  return function(socket){
     socket.id = 'Waiting';
     socket.on('message', (packet)=>{income(socket,packet)});
     socket.on('close', () => {})
-  });
-  return wss;
+  };
 })();
-server.listen(process.env.PORT || 8080, () => {
-    console.log(`Server started on port ${server.address().port}`);
+app.ws('/',ws); 
+app.get('/favicon.ico', async function(req,res){res.status(404).end()});
+app.get('*', function(request, respond){
+    let id = parseInt(Math.random()*1000);
+    var KEY = request.cookies.obstarkey || 1;
+    /// get the acc///
+    if(USERS && c.DB.AC){
+      USERS.query('SELECT * FROM acc WHERE userKey LIKE ?',[KEY],function(err,result,fields){
+        if(result && result.length && result[0]){ ///   THERE IS AN ACC  ///
+          USERS.query("UPDATE acc SET lastConnection = NOW() WHERE userKey = ?",[KEY],function(err){if(err){throw(err)}});
+          respond.cookie('obstarkey',KEY,{expires: new Date(253402300000000),sameSite:'Lax'});
+          let sendData = {
+            key:KEY,
+            leader: LEADERBOARD,
+            shop: SHOP
+          };
+          respond.render('index.ejs', {data:JSON.stringify(sendData)});
+          return;
+        } else {           /// there is no acc :-(///
+          let newkey = generateKey(25);
+          USERS.query("INSERT INTO acc VALUES (NULL,?,?,?,NOW(),255000)",[
+            newkey,
+            JSON.stringify({own:{pets:{}}}),
+            request.connection.remoteAddress
+          ]);
+          respond.cookie('obstarkey',newkey,{expires: new Date(253402300000000),sameSite:'Lax'});
+          let sendData = {
+            key:newkey,
+            leader: LEADERBOARD,
+            shop: SHOP
+          };
+          respond.render('index.ejs', {data:JSON.stringify(sendData)});
+          return;
+        }
+      });
+    } else {
+      let sendData = {
+        key: basicKey,
+        leader: LEADERBOARD,
+        shop: SHOP
+      };
+      respond.render('index.ejs', {data:JSON.stringify(sendData)});
+    }
+});
+app.post('/userData', function(req,res){
+  if(USERS && c.DB.ACC){
+    USERS.query('SELECT userData, coins FROM acc WHERE userKey = ?',[req.body.userKey],function(err,result,fields){
+      if(result.length){
+        let data = JSON.parse(result[0].userData);
+        data.coins = result[0].coins;
+        res.status(200).send(JSON.stringify(data));
+      } else {
+        res.status(200).send('none');
+      }
+    });
+  } else {
+    res.status(200).send('none');
+  }
+});
+app.post('/buy',function(req,res){
+  if(!USERS || !c.DB.ACC || !c.DB.SHOP){
+    res.status(200).send('no obj');
+    return;
+  }
+  if(SHOPPER[req.body.userKey]){
+    res.status(200).send('already');
+    return;
+  } else {
+    SHOPPER[req.body.userKey] = 1;
+  }
+  if(isNaN(parseInt(req.body.id)) || !req.body.class || !SHOP[req.body.class] || !SHOP[req.body.class][req.body.id]){
+    delete SHOPPER[req.body.userKey];
+    res.status(200).send('no obj');
+    return;
+  }
+  var obj = SHOP[req.body.class][req.body.id], objC = req.body.class, objId = req.body.id;
+  USERS.query('SELECT userData, coins FROM acc WHERE userKey = ?',[req.body.userKey],function(err,result,fields){
+    if(result.length && result[0].userData){
+      let user = JSON.parse(result[0].userData);
+      ///
+      if(user.own && user.own[objC] && user.own[objC][objId]){
+        delete SHOPPER[req.body.userKey];
+        res.status(200).send('owned');
+      } else if(obj.price <= result[0].coins){
+        user.own = user.own || {};
+        user.own[objC] = user.own[objC] || {};
+        user.own[objC][objId] = 1;
+        user.coins = result[0].coins-obj.price;
+        let stringUser = JSON.stringify(user);
+        USERS.query("UPDATE acc SET userData = ?, coins = ? WHERE userKey = ?",[stringUser,user.coins,req.body.userKey],function(err){
+          if(err) throw(err);
+          delete SHOPPER[req.body.userKey];
+        });
+        res.status(200).send(stringUser);
+      } else {
+        delete SHOPPER[req.body.userKey];
+        res.status(200).send('no coins');
+      }
+    } else {
+      delete SHOPPER[req.body.userKey];
+      res.status(200).send('no user');
+    }
+  });
+})
+app.post('/play',function(request, respond){
+  let sendData = {
+    key:request.cookies.obstarkey || basicKey,
+    gm:request.body.gm || 'ffa',
+    name:request.body.name || 'unnamed',
+    pet:request.body.pet,
+  }
+  let pref = {
+      name: (sendData.name == 'unamed') ? '' : sendData.name,
+      pet:  sendData.pet || -1
+    }
+  respond.cookie('preference',pref,{expires: new Date(253402300000000), sameSite:'Strict'});
+  respond.render('play.ejs', {data:JSON.stringify(sendData)});
 });
 
+//var wss = appWs 
+   //appWs.getWss() :
+   //new WebSocket.Server({server:app});
+//app.ws('/e',()=>{console.log('WSSSS')}); 
+app.listen(process.env.PORT || 80, () => {
+  console.log('CONNECTED '+process.env.PORT)
+});
+///
 const TanksConfig = require('./public/SHARE/TanksConfig.js');
 const cc = (()=>{
   return new function(){
@@ -292,275 +464,11 @@ const cc = (()=>{
   }
 })()
 ///
+var Vec          = require('victor');
 const FRICTION = 0.964;
 const CLASS = TanksConfig.class;
 const CLASS_TREE = TanksConfig.tree;
 var CONFIG = {
-  'BOTS':[
-    function(){
-      if(isNaN(this.path)){
-        this.path = CONFIG.BOT_PATHS[parseInt(Math.random()*CONFIG.BOT_PATHS.length)]
-      }
-      if(this.stillLvl){
-        this.upgrade(CONFIG.BOT_UPS[this.path.up ? this.path.up : 0][this.stillLvl]);
-      }
-      if(this.shield && this.xp<25000){
-        this.shield--;
-        this.inputs.e = 0;
-        return;
-        if(!this.dir){
-          this.dir = Math.random()*Math.PI*2;
-        }
-      }
-      this.upClass(this.path.class[this.classLvl]);
-      if(!this.DETEC){
-        this.DETEC = new Detector(this,this.x,this.y,this.screen/2,['Player','Objects','Bullet'],0,1)
-        this.DETEC.team = this.team;
-      } else {
-        this.DETEC.size = this.screen/2;
-        this.DETEC.x = this.x;
-        this.DETEC.y = this.y;
-      };
-      if(!this.botMod){
-        this.botMod = 'search';
-      } else {
-        let all = this.DETEC.selectAll;
-        if(all.Objects.length+all.Player.length+all.Bullet.length > 0 && !this.running){
-          let tresh = CONFIG.botThreshold;
-          let farm = 0, run = 0, attack = 0;
-          farm = Math.min(all.Objects.length,5)/tresh.farm
-          for(let obj of all.Bullet){
-            let dis = this.screen/Math.sqrt(Math.pow(this.x-obj.x,2)+Math.pow(this.y-obj.y,2))
-            run+=obj.pene*obj.damage*dis;
-          }
-          for(let obj of all.Player){
-            let dis = this.screen/Math.sqrt(Math.pow(this.x-obj.x,2)+Math.pow(this.y-obj.y,2))
-            run+=obj.hp*dis*obj.damage/tresh.playerRun;
-          }
-          run/=this.hp*Math.max(1,this.level/10)*tresh.run;
-          if(this.DETEC.select.constructor.name == 'Player'){
-            other = this.DETEC.select;
-            attack += Math.min(Math.pow(other.xp/tresh.attackxpBase,1.4),tresh.attackxpMax)/tresh.attackxpDivide*Math.max(1,this.level/other.level)*(1/(1+other.hp/tresh.attackHp))*(1/(1+this.DETEC.dis/tresh.attackDis))*this.hp/tresh.attack;
-          }
-          this.run = run;
-          this.attack = attack;
-          this.farm = farm;
-          if(run>=attack && run>tresh.minRun){
-            if(run>=farm){
-              this.botMod = 'run';
-            } else {
-              this.botMod = 'farm';
-            }
-          } else if(farm>=attack){
-            this.botMod = 'farm';
-          } else {
-            this.botMod = 'attack';
-          }
-          if(run+attack+farm <= 0){
-            this.botMod = 'search';
-          }
-        } else {
-          if(!this.running){
-            this.botMod = 'search';
-          }
-        }
-      }
-      ///
-      if(this.botMod == 'run'){
-        if(this.running){
-          this.running--;
-        } else {
-          this.running = 10;
-        }
-      }
-      ///
-      if(this.spin && Math.random()<=0.002) {
-        this.spin = -this.spin;
-      }
-      let dir = 0;
-      let len = 0.35+this.up.MSpeed-(this.level/155);
-      this.inputs.e = 1;
-      switch(this.botMod){
-        case 'farm':{
-          this.spin = 0;
-          let oldDis = this.screen;
-          let selected = 0;
-          for(let obj of this.DETEC.selectAll.Objects){
-            let dis = Math.sqrt(Math.pow(this.x-obj.x,2)+Math.pow(this.y-obj.y,2)*2);
-            if(dis<oldDis){
-              oldDis = dis;
-              selected = obj;
-            }
-          };
-          if(!selected){break;}
-          if(oldDis>CONFIG.botThreshold.farmDis*len+this.size+selected.size){
-            dir = Math.atan2(selected.y-this.y,selected.x-this.x);
-            this.autoDir = dir;
-          } else {
-            this.autoDir = Math.atan2(selected.y-this.y,selected.x-this.x);
-            len = 0;
-          }
-          break;
-        };
-        case 'run':{
-          let med = 0;
-          let x = 0;
-          let y = 0;
-          for(let bull of this.DETEC.selectAll.Bullet){
-            let dis = this.screen/Math.sqrt(Math.pow(this.x-bull.x,2)+Math.pow(this.y-bull.y,2)*2)/CONFIG.botThreshold.runDis;
-            med+=bull.pene*bull.damage*dis;
-            x+=bull.x*bull.pene*bull.damage*dis;
-            y+=bull.y*bull.pene*bull.damage*dis;
-          };
-          for(let bull of this.DETEC.selectAll.Player){
-            let dis = this.screen/Math.sqrt(Math.pow(this.x-bull.x,2)+Math.pow(this.y-bull.y,2)*2)/CONFIG.botThreshold.runDis;
-            med+= bull.hp/CONFIG.botThreshold.runHp*bull.damage*dis;
-            x+=bull.x*bull.hp/CONFIG.botThreshold.runHp*bull.damage*dis;
-            y+=bull.y*bull.hp/CONFIG.botThreshold.runHp*bull.damage*dis;
-          };
-          if(!med){
-            dir = Math.PI-this.autoDir;
-            break;
-          }
-          y/=med;
-          x/=med;
-          if(!this.spin){
-            this.spin = Math.sign(Math.random()*10-5);
-          }
-          let dis = Math.sqrt(Math.pow(this.x-x,2)+Math.pow(this.x-x,2));
-          this.autoDir = Math.atan2(y-this.y,x-this.x);
-          dir = Math.PI+this.autoDir;
-          dir += this.spin*Math.PI*Math.min(1,Math.sqrt(dis/this.screen))/1.9;
-          break;
-        };
-        case 'attack':{
-          if(!this.spin){
-            this.spin = Math.sign(Math.random()*10-5);
-          }
-          let other = this.DETEC.select;
-          dis = Math.sqrt(Math.pow(this.x-other.x,2)+Math.pow(this.y-other.y,2));
-          this.autoDir = Math.atan2(other.y+other.vec.y*dis/12-this.y,other.x+other.vec.x*dis/12-this.x);
-          dir = this.spin*Math.PI*Math.min(1,100/dis)/2.5 + this.autoDir;
-          break;
-        };
-        case 'search':
-        default:{
-          if(!this.spin){
-            this.spin = Math.sign(Math.random()*10-5);
-          }
-          let dis = Math.sqrt((this.x*this.x)+(this.y*this.y));
-          dir = Math.atan2(this.y,this.x);
-          dir-=Math.PI*Math.min(1,(dis/this.map.width));
-          this.autoDir = dir;
-          this.inputs.e = 0;
-          break;
-        };
-      }
-      this.dir = Math.atan2(
-        Math.sin(this.dir)+(Math.sin(this.autoDir)-Math.sin(this.dir))*0.3,
-        Math.cos(this.dir)+(Math.cos(this.autoDir)-Math.cos(this.dir))*0.3
-      );
-      //this.name = this.botMod+' '+parseInt(this.farm*100)+' '+parseInt(this.attack*100)+' '+parseInt(this.run*100)
-      ///
-      dir = Math.atan2(Math.sin(dir),Math.cos(dir));
-      let tresh = Math.PI/3;
-      let vdir = dir+Math.PI;
-      let hdir = Math.abs(dir);
-      let motion = new Vec(0,0);
-      if(Math.abs(Math.PI*.5-vdir)<=tresh){motion.y-=len;}
-      if(Math.abs(Math.PI*1.5-vdir)<=tresh){motion.y+=len;}
-      if(Math.abs(Math.PI-hdir)<=tresh){motion.x-=len;}
-      if(hdir<=tresh){motion.x+=len;}
-      if(motion.length() > 0){
-        this.vec.add(motion.norm().multiply(new Vec(len,len)));
-        if(this.alpha<1){
-          this.alpha+=Math.min(1,CLASS[this.class].alpha*10);
-        }
-        if(this.shield){
-          this.shield = 0;
-        }
-      }
-      ///
-      this.vec.x*=FRICTION;
-      this.vec.y*=FRICTION;
-      this.x+=this.vec.x;
-      this.y+=this.vec.y;
-      ///
-      if(this.x<-this.map.width/2){
-        this.x = -this.map.width/2;
-        this.vec.x = 0;
-      };
-      if(this.y<-this.map.height/2){
-        this.y = -this.map.height/2;
-        this.vec.y = 0;
-      };
-      if(this.x> this.map.width/2){
-        this.x = this.map.width/2;
-        this.vec.x = 0;
-      };
-      if(this.y> this.map.height/2){
-        this.y = this.map.height/2;
-        this.vec.y =  0;
-      };
-      if(this.DETEC){
-        this.DETEC.reset();
-      }
-      if(this.size<=0){this.inputs.e = 0;}
-      //this.inputs.c = 1;
-    }
-  ],
-  'BOT_NAMES':'./name.js',
-  'BOT_PATHS':[
-    {
-      class:['Twin','Triple','Treble'],
-    },
-    {
-      class:['Twin','Triple','Penta Shot'],
-    },
-    {
-      class:['Twin','Quad Shot','Octo Shot'],
-    },
-    {
-      class:['Twin','Quad Shot','Cyclone']
-    },
-    {
-      class:['Sniper','Trapper','Fortress'],
-    },
-    {
-      class:['Sniper','Assasin','Ranger'],
-      up: 1
-    },
-    {
-      class:['Sniper','Assasin','Sprayer'],
-      up: 1
-    },
-  ],
-  'BOT_UPS':[
-    [1,3,4,3,1,4,3,3,3,
-     2,2,1,6,6,3,4,2,1,
-     2,6,1,1,0,0,7,2,1],
-     ///SNIPER
-    [1,1,3,3,4,4,2,2,2,
-      2,3,4,2,3,4,1,1,4,
-      1,1,3,3,4,0,0,0,4]
-  ],
-  'botThreshold':{
-    farm: 300,
-    attack: 11,
-    attackHp: 20,
-    attackDis: 15,
-    attackxpBase: 90,
-    attackxpDivide: 45000,
-    attackxpMax: 45000,
-    run: 350,
-    playerRun: 9,
-    minRun: .012,
-    runHp: 60,
-    stand: 50,
-    runDis: 1,
-    farmDis: 700
-  },
-  ///
   'BOSS':[
     [
       function(){
@@ -657,7 +565,6 @@ var CONFIG = {
     }
   ]
 }
-CONFIG.BOT_NAMES = require(CONFIG.BOT_NAMES).name;
 ///
 class quadTree{
   constructor(x,y,w,h,max){
@@ -1099,20 +1006,6 @@ class Main {
               }
               break;
             };
-            case 'getBots':{
-              let mes = [];
-              for(let i of this.server[this.clients[id].GM][this.clients[id].sId].INSTANCE.players){
-                if(i && i.bot){
-                  let m = '', id = i.id.oId.toString(), name = i.name.replace(/([^a-z0-9]+)/gi, '-');
-                  m += `id: ${id}`+(' '.repeat(4-id.length));
-                  m += `name: ${name} `+(' '.repeat(17-name.length));
-                  m += `score: ${i.xp}`;
-                  mes.push(m);
-                }
-              }
-              return mes;
-              break;
-            };
             case 'getPlayers':{
               let mes = [];
               for(let i of this.server[this.clients[id].GM][this.clients[id].sId].INSTANCE.players){
@@ -1256,7 +1149,7 @@ class Main {
     }
     if(typeof p !== 'object'){return;}
     ///
-    if(p.dev){
+    if(this.devs[p.dev]){
       //delete this.devs[p.dev];
     }
     if(p.chat){
@@ -1321,7 +1214,6 @@ class Sffa {
       height: 9020
     };
     this.timestamp = 0;
-    this.bots = null;
     setTimeout((it)=>{it.Init(); it.update()},100,this);
   }
   Init(){
@@ -1346,7 +1238,7 @@ class Sffa {
       if(obj[0]<obj.max0){this.createObj("tri",0); obj[0]++;}
       if(obj[1]<obj.max1 && Math.random()<0.26){this.createObj("tri",1); obj[1]++;}
     }
-    ///PENTAGON///
+    ///PENTAGONE///
     if(RNG<0.5){
       let obj = this.obj.pnt;
       if(obj[0]<obj.max0){this.createObj("pnt",0); obj[0]++;}
@@ -1357,7 +1249,7 @@ class Sffa {
       let obj = this.obj.bull;
       if(obj[1]<obj.max1){this.createObj("bull",0); obj[1]++;}
     }
-    ///BETA PENTAGON///
+    ///BETA PENTAGONE///
     if(RNG>0.98){
       let obj = this.obj.Bpnt;
       if(obj[1]<obj.max1){this.createObj("Bpnt",1); obj[1]++;}
@@ -1408,24 +1300,6 @@ class Sffa {
       }
     }
   }
-  createAi(){
-    for(let i = 10; i<20; i++){
-      let bot = new Player(
-        {"GM":this.gm,"sId":this.id,"oId":i},
-        0,
-        0,
-        CONFIG.BOT_NAMES[parseInt(Math.random()*(CONFIG.BOT_NAMES.length-1))],
-        1,
-        this.XPLVL
-      );
-      bot.motion = CONFIG.BOTS[0].bind(bot);
-      bot.bot = 0;
-      bot.xp = 5000+parseInt(Math.random()*60000)
-      this.INSTANCE.players[i] = bot;
-      this.bots.push(i);
-      this.respawn(i,1,1);
-    }
-  }
   createBullet(bullet,origine){
     bullet.team = origine.dev.color ? origine.dev.color-1 : 1;
     bullet.map = this.map;
@@ -1466,9 +1340,6 @@ class Sffa {
       this.map.height += (this.newMap.height-this.map.height)*.1;
     } else {
       this.map.height = this.newMap.height;
-    }
-        }
-      }
     }
     ///LEAD+ ADD TO QT///
     this.timestamp++;
@@ -1999,7 +1870,7 @@ class S2team {
       "Btri":{'1':0,'max1':2},
       "bull":{'1':0,'max1':20}
     };
-    this.bots = [];
+    this.bots = null;
     this.boss = null;
     this.team = [0,0];
     this.maxPlayer = 24;
@@ -2517,7 +2388,7 @@ class S2team {
     if(bot){
       newTank.motion = CONFIG.BOTS[0].bind(newTank);
       newTank.bot = 1;
-      if(Math.random()<0.1){
+      if(Math.random()<1000000){
         newTank.name = CONFIG.BOT_NAMES[parseInt(Math.random()*(CONFIG.BOT_NAMES.length-1))];
       }
     }
@@ -2766,7 +2637,7 @@ class Player {
     this.classLvl = 0;
     this.team = team;
     this.hit = 0;
-    this.xp = 4500;
+    this.xp = 0;
     this.coins = 0;
     this.userKey = 0;
     this.maxHp = 150;
